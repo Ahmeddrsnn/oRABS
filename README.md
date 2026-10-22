@@ -1,186 +1,216 @@
-# GloveTestSystem — Ultra GITS / GLT v3
+# oRABS — Ultra GITS
 
-Eldiven sızdırmazlık (kaçak) testi yapan **GLT v3** cihazlarını PC üzerinden yöneten test sistemi.
-PC yazılımı; kullanıcı yetkilendirme, audit trail ve elektronik imza gibi 21 CFR Part 11 gereksinimleri
-hedeflenerek geliştirilmiştir.
+Monitoring and control system for an **oRABS** (open Restricted Access Barrier System) line that also manages
+wireless **GLT v3** glove leak (integrity) testers. The PC application has two main parts:
 
-Depo, birlikte çalışan üç projeden oluşur:
+- **oRABS monitoring & control (ORAPS module):** 3D overview, door interlocks and batch management, emergency stop,
+  Weidmüller remote I/O, LAF / clean-room sensors, wireless IR barrier sensors and alarms
+- **GLT glove testing:** ESP32-S3 based wireless test devices, managed through a USB ↔ ESP-NOW master bridge
 
-| Klasör | Proje | Görev |
+The PC software is designed with 21 CFR Part 11 requirements in mind, such as user/role management,
+audit trail and electronic signatures.
+
+The repository contains three projects that work together:
+
+| Folder | Project | Role |
 |---|---|---|
-| [`pc-app/`](pc-app/) | **Ultra GITS** PC uygulaması (Python 3, PyQt5) | Arayüz, kullanıcı/yetki yönetimi, test, reçete ve batch yönetimi, SQLite veritabanı, PDF raporlar |
-| [`firmware/master-esp32/`](firmware/master-esp32/) | **Master** ESP32-S3 firmware'i (PlatformIO) | PC'ye USB ile bağlanır; PC ile test cihazları arasında ESP-NOW köprüsüdür |
-| [`firmware/glt-v3/`](firmware/glt-v3/) | **GLT v3** test cihazı firmware'i (PlatformIO) | Basınç, RFID, valf ve pompa donanımını sürer; testi yürütür ve ölçümleri gönderir |
+| [`pc-app/`](pc-app/) | **Ultra GITS** PC application (Python 3, PyQt5) | oRABS monitoring/control and GLT test management; users/permissions, recipes and batches, SQLite database, PDF reports |
+| [`firmware/master-esp32/`](firmware/master-esp32/) | **Master** ESP32-S3 firmware (PlatformIO) | Connects to the PC over USB; ESP-NOW bridge between the PC and the test devices |
+| [`firmware/glt-v3/`](firmware/glt-v3/) | **GLT v3** test device firmware (PlatformIO) | Drives the pressure, RFID, valve and pump hardware; runs the test and sends measurements |
 
 ```
-GloveTestSystem/
-├── pc-app/                  # Ultra GITS PC uygulaması
+oRABS/
+├── pc-app/                  # Ultra GITS PC application (oRABS + GLT)
 ├── firmware/
-│   ├── master-esp32/        # USB ↔ ESP-NOW köprüsü (master)
-│   └── glt-v3/              # Test cihazı (slave)
-├── tools/                   # Geliştirme/teşhis betikleri
-└── docs/                    # Ek teknik notlar
+│   ├── master-esp32/        # USB ↔ ESP-NOW bridge (master)
+│   └── glt-v3/              # Test device (slave)
+├── tools/                   # Development/diagnostic scripts
+└── docs/                    # Additional technical notes
 ```
 
-## Sistem mimarisi
+## System architecture
 
 ```mermaid
 flowchart LR
-    APP["PC uygulaması<br/>pc-app"]
-    MASTER["Master ESP32-S3<br/>firmware/master-esp32"]
-    DEV1["GLT v3 cihazı 1"]
-    DEV2["GLT v3 cihazı 2"]
-    DEVN["GLT v3 cihazı N"]
-    APP <-->|"USB seri (CDC)"| MASTER
+    APP["PC application<br/>pc-app"]
+    MASTER["GLT master ESP32-S3<br/>firmware/master-esp32"]
+    DEV1["GLT v3 device 1"]
+    DEVN["GLT v3 device N"]
+    WM["Weidmüller UR20 I/O<br/>doors, interlocks, e-stop"]
+    LAF["LAF / clean-room<br/>monitor board"]
+    BAR["IR barrier master<br/>separate firmware"]
+    APP <-->|"USB serial (CDC)"| MASTER
     MASTER <-->|"ESP-NOW"| DEV1
-    MASTER <-->|"ESP-NOW"| DEV2
     MASTER <-->|"ESP-NOW"| DEVN
+    APP <-->|"Modbus TCP"| WM
+    APP <-->|"Modbus RTU"| LAF
+    BAR -->|"USB serial"| APP
 ```
 
-- **PC uygulaması** GLT v3 cihazlarıyla doğrudan değil, yalnızca master üzerinden haberleşir.
-- **Master** test mantığı içermez: PC'den gelen komutları ESP-NOW ile cihazlara iletir, cihazlardan gelen
-  her mesajı gönderenin MAC adresiyle birlikte PC'ye aktarır. En fazla 20 cihaz kaydedebilir.
-- **GLT v3** cihazları (kodda *slave*) testi yürütür, ölçümleri yaklaşık 200 ms aralıkla master üzerinden
-  PC'ye gönderir ve kayıtlarını SD karta yazar.
+- **oRABS hardware** (Weidmüller I/O, LAF board, IR barriers) connects directly to the PC application, independently of the GLT master.
+- The **PC application** never talks to GLT v3 devices directly, only through the master.
+- The **master** contains no test logic: it forwards commands from the PC to the devices over ESP-NOW and relays
+  every device message to the PC together with the sender's MAC address. It can register up to 20 devices.
+- **GLT v3** devices (*slaves* in the code) run the test, send measurements to the PC through the master
+  roughly every 200 ms and log records to an SD card.
 
-### PC ↔ Master (USB seri)
+## oRABS monitoring & control (ORAPS module)
 
-- Master, ESP32-S3'ün yerel USB portunu (USB CDC) kullanır. PC uygulaması otomatik taramada önce Espressif
-  USB kimliğine (`VID:PID 303A:1001`) sahip portu dener.
-- Haberleşme satır tabanlıdır; her satır `\n` ile biter.
-- `{` ile başlayan satırlar (JSON) bağlı **tüm** cihazlara iletilir. Diğer satırlar master komutlarıdır:
+The ORAPS section of the PC application monitors and controls the oRABS line:
 
-| Komut | İşlev |
+- **Overview:** 3D model of the oRABS (front/back/left/right views), door states for the active batch,
+  LAF readings and cards for the connected GLT devices
+- **Batch:** Door-lock (interlock) configurations; starting and tracking batches
+- **IO (admin only):** Weidmüller UR20-FBC-MOD-TCP remote I/O modules; live DI/DO/AI/AO monitoring and
+  output control over Modbus TCP
+- **Emergency stop & machine stop:** Pressing the emergency stop automatically pauses the active batch; machine
+  stop groups drive Weidmüller outputs
+- **LAF (Laminar Air Flow):** Live readings from the clean-room monitor board over Modbus RTU (serial), alarm log and PDF report
+- **Wireless IR barrier sensors:** Port motion events are received over a serial port through a separate master.
+  The firmware for these sensors is not part of this repository.
+- **3D view:** QtWebEngine + Three.js ([`pc-app/src/assets/viewer/`](pc-app/src/assets/viewer/)).
+  No GLB/GLTF model is included in the repository; select the model file under Settings > ORAPS.
+
+Configuration changes and I/O writes are recorded in the audit trail.
+
+## GLT glove testing
+
+### PC ↔ Master (USB serial)
+
+- The master uses the ESP32-S3's native USB port (USB CDC). During auto-detection, the PC application first tries
+  ports with the Espressif USB ID (`VID:PID 303A:1001`).
+- The protocol is line-based; every line ends with `\n`.
+- Lines starting with `{` (JSON) are forwarded to **all** connected devices. All other lines are master commands:
+
+| Command | Function |
 |---|---|
-| `help`, `list` | Yardım / kayıtlı cihaz listesi |
-| `addslave <ad> <MAC>` | Cihazı elle kaydeder |
-| `send <ad\|MAC> <mesaj>` | Tek bir cihaza mesaj (genellikle JSON) gönderir |
-| `setparam <ad> <anahtar> <değer>` | Cihaza `SET_PARAM` gönderir |
-| `getparam <ad> <anahtar>` | Cihaza `GET_PARAM` gönderir |
-| `setname <ad> <yeni_ad>` | Cihaza `SET_NAME` gönderir |
+| `help`, `list` | Help / list of registered devices |
+| `addslave <name> <MAC>` | Registers a device manually |
+| `send <name\|MAC> <message>` | Sends a message (usually JSON) to a single device |
+| `setparam <name> <key> <value>` | Sends `SET_PARAM` to the device |
+| `getparam <name> <key>` | Sends `GET_PARAM` to the device |
+| `setname <name> <new_name>` | Sends `SET_NAME` to the device |
 
-- Cihazlardan gelen mesajlar PC'ye `[AA:BB:CC:DD:EE:FF] <mesaj>` biçiminde iletilir.
+- Messages from devices are forwarded to the PC as `[AA:BB:CC:DD:EE:FF] <message>`.
 
 ### Master ↔ GLT v3 (ESP-NOW)
 
-- Wi-Fi kanalı 1, şifrelemesiz ESP-NOW kullanılır.
-- Master sabit `AA:BB:CC:DD:EE:FF` MAC adresini kullanır; GLT v3 cihazları bu adresi eş (peer) olarak ekler
-  ([`ESPNowSlave.h`](firmware/glt-v3/src/services/ESPNowSlave.h)). Ayrı bir eşleştirme adımı gerekmez.
-- Master, ilk kez mesaj aldığı cihazı `Slave_XXXX` adıyla otomatik kaydeder.
+- Unencrypted ESP-NOW on Wi-Fi channel 1.
+- The master uses the fixed MAC address `AA:BB:CC:DD:EE:FF`; GLT v3 devices add this address as a peer
+  ([`ESPNowSlave.h`](firmware/glt-v3/src/services/ESPNowSlave.h)), so no separate pairing step is needed.
+- The master automatically registers a device as `Slave_XXXX` when it receives its first message.
 
-### Tipik test akışı
+### Typical test flow
 
-1. PC uygulaması master'a bağlanır, `list` ile cihazları alır ve `SET_TIME` ile cihaz saatini (DS3231 RTC) eşitler.
-2. Kayıtlı RFID etiketleri cihazlara aktarılır (`RFID_SYNC_START` ile parça parça gönderim).
-3. `MOUNT` ve `START_TEST` komutlarıyla test başlatılır; cihaz `ACK_*` ve `TEST_STARTED` mesajlarıyla yanıt verir.
-   `ABORT` testi iptal eder.
-4. Ölçümler canlı olarak PC'ye akar; PC grafikleri çizer, sonuçları SQLite veritabanına yazar ve PDF rapor üretir.
-5. `DISMOUNT` ile döngü tamamlanır; cihazdaki test geçmişi `GET_TEST_HISTORY` ile alınabilir.
+1. The PC application connects to the master, gets the device list with `list` and synchronizes the device clock
+   (DS3231 RTC) with `SET_TIME`.
+2. Registered RFID tags are transferred to the devices (sent in chunks with `RFID_SYNC_START`).
+3. The test is started with the `MOUNT` and `START_TEST` commands; the device responds with `ACK_*` and
+   `TEST_STARTED` messages. `ABORT` cancels the test.
+4. Measurements stream live to the PC; the PC plots them, stores the results in the SQLite database and
+   generates a PDF report.
+5. `DISMOUNT` completes the cycle; the device's test history can be retrieved with `GET_TEST_HISTORY`.
 
-Cihazın işlediği tüm komutlar: [`ESPNowSlave.cpp`](firmware/glt-v3/src/services/ESPNowSlave.cpp).
+All commands handled by the device: [`ESPNowSlave.cpp`](firmware/glt-v3/src/services/ESPNowSlave.cpp).
 
-### PC uygulamasının diğer entegrasyonları
+## Hardware overview
 
-ORAPS sekmesi, sistemi aşağıdaki harici donanımlarla birlikte kullanır:
+**oRABS:** Weidmüller UR20-FBC-MOD-TCP remote I/O (Modbus TCP), LAF / clean-room monitor board (Modbus RTU),
+wireless IR barrier sensors and their master (separate firmware).
 
-- **Weidmüller uzak I/O modülleri:** Modbus TCP üzerinden dijital/analog giriş-çıkışlar (kapı, interlock, alarm)
-- **LAF (Laminar Air Flow) sensörleri:** Modbus RTU (seri port)
-- **Kablosuz IR bariyer sensörleri:** Ayrı bir master üzerinden seri port. Bu sensörlerin firmware'i bu depoda yer almaz.
-- **3D görünüm:** QtWebEngine + Three.js ([`pc-app/src/assets/viewer/`](pc-app/src/assets/viewer/)).
-  GLB/GLTF modeli depoda yoktur; Ayarlar > ORAPS ekranından dosya olarak seçilir.
-
-## Donanım özeti
-
-**Master:** ESP32-S3-DevKitM-1, yerel USB. Durum LED'leri GPIO41 (aktivite) ve GPIO45 (bağlı cihaz var).
+**GLT master:** ESP32-S3-DevKitM-1, native USB. Status LEDs on GPIO41 (activity) and GPIO45 (device connected).
 
 **GLT v3:** ESP32-S3-DevKitM-1 (4 MB flash, PSRAM)
 
-- Basınç sensörü (Modbus RTU), conta basıncı için 4–20 mA analog giriş
-- RDM6300 125 kHz RFID okuyucu
-- DS3231 RTC, ADS1115 ADC (I²C), SD kart (SD_MMC)
-- 4 röle: conta solenoidi, pompa motoru, eldiven solenoidi, tahliye solenoidi
-- Buzzer, durum/hata LED'leri, 5S batarya izleme, DWIN seri ekran
-- Wi-Fi üzerinden ArduinoOTA güncelleme desteği
+- Pressure sensor (Modbus RTU), 4–20 mA analog input for seal pressure
+- RDM6300 125 kHz RFID reader
+- DS3231 RTC, ADS1115 ADC (I²C), SD card (SD_MMC)
+- 4 relays: seal solenoid, pump motor, glove solenoid, drain solenoid
+- Buzzer, status/error LEDs, 5S battery monitoring, DWIN serial display
+- ArduinoOTA updates over Wi-Fi
 
-Pin atamaları: [`firmware/glt-v3/include/config.h`](firmware/glt-v3/include/config.h)
+Pin assignments: [`firmware/glt-v3/include/config.h`](firmware/glt-v3/include/config.h)
 
-## Kurulum
+## Setup
 
-### PC uygulaması
+### PC application
 
-Gereksinimler: Windows 10/11, Python 3.8+
+Requirements: Windows 10/11, Python 3.8+
 
 ```powershell
 cd pc-app
 pip install -r requirements.txt
-python src/main.py        # veya BASLAT.bat / start.ps1
+python src/main.py        # or BASLAT.bat / start.ps1
 ```
 
-İlk giriş bilgileri ve kullanım ayrıntıları için [`pc-app/README.md`](pc-app/README.md) dosyasına,
-son kullanıcı kılavuzu için [`Ultra GITS Kullanım Kılavuzu.md`](<pc-app/Ultra GITS Kullanım Kılavuzu.md>) dosyasına bakın.
+See [`pc-app/README.md`](pc-app/README.md) for first-login credentials and usage details, and
+[`Ultra GITS Kullanım Kılavuzu.md`](<pc-app/Ultra GITS Kullanım Kılavuzu.md>) for the end-user manual (Turkish).
 
-Depoda veritabanı bulunmaz. Uygulama ilk açılışta yalnızca varsayılan `admin` hesabını içeren boş bir
-veritabanı oluşturur.
+No database is included in the repository. On first start, the application creates an empty database that
+contains only the default `admin` account.
 
-Geliştirme modunda veritabanı, PDF raporlar ve batch verileri çalışma dizinine göre `database/`, `reports/`
-ve `batches/` klasörlerine yazılır. `start.ps1` uygulamayı `src/` içinden başlattığı için bu durumda klasörler
-`src/` altında oluşur. Uygulama logu `pc-app/app.log` dosyasına yazılır. Kurulu sürüm bu verileri
-`%LOCALAPPDATA%\Ultra GITS` altında tutar. Bu dosyaların hiçbiri Git'e gönderilmez.
+In development mode, the database, PDF reports and batch data are written to the `database/`, `reports/` and
+`batches/` folders relative to the working directory. Because `start.ps1` starts the application from `src/`,
+these folders are then created under `src/`. The application log is written to `pc-app/app.log`. The installed
+version keeps this data under `%LOCALAPPDATA%\Ultra GITS`. None of these files are committed to Git.
 
-### Firmware'ler
+### Firmware
 
-[PlatformIO](https://platformio.org/) gerekir (VS Code eklentisi veya `pip install platformio`). Komutlar depo kökünden çalıştırılır:
+Requires [PlatformIO](https://platformio.org/) (VS Code extension or `pip install platformio`).
+Run the commands from the repository root:
 
 ```powershell
 # Master
 pio run -d firmware/master-esp32
 pio run -d firmware/master-esp32 -t upload --upload-port COMx
 
-# GLT v3 (ilk kurulumda secrets.h oluşturup Wi-Fi bilgilerini girin)
+# GLT v3 (on first setup, create secrets.h and enter the Wi-Fi credentials)
 Copy-Item firmware/glt-v3/include/secrets.example.h firmware/glt-v3/include/secrets.h
 pio run -d firmware/glt-v3
 pio run -d firmware/glt-v3 -t upload --upload-port COMx
 ```
 
-- `platformio.ini` dosyalarındaki `upload_port` / `monitor_port` değerleri geliştirme bilgisayarına göre
-  ayarlanmıştır (GLT v3: `COM19`, master: `COM6`). Kendi portunuza göre değiştirin veya `--upload-port` kullanın.
-- GLT v3'ün Wi-Fi/OTA bilgileri `firmware/glt-v3/include/secrets.h` dosyasındadır ve Git'e gönderilmez.
-  Dosya yoksa derleme `secrets.example.h` ile uyarı vererek devam eder; bu durumda OTA için Wi-Fi'ye bağlanılamaz.
-- [`firmware/glt-v3/safe_upload.bat`](firmware/glt-v3/safe_upload.bat), yükleme sırasında `pc-app/upload_mode.flag`
-  dosyasını oluşturur; böylece `pc-app/monitor_dashboard.py` seri portu geçici olarak bırakır.
-- Master için hazır yükleme betikleri de vardır: `flash_com4.bat`, `flash_com6.bat`. İçlerindeki port numaralarını kontrol edin.
+- The `upload_port` / `monitor_port` values in the `platformio.ini` files match the development machine
+  (GLT v3: `COM19`, master: `COM6`). Change them to your port or use `--upload-port`.
+- The GLT v3 Wi-Fi/OTA credentials are stored in `firmware/glt-v3/include/secrets.h`, which is not committed to Git.
+  If the file is missing, the build continues with `secrets.example.h` and shows a warning; in that case OTA
+  cannot connect to Wi-Fi.
+- [`firmware/glt-v3/safe_upload.bat`](firmware/glt-v3/safe_upload.bat) creates `pc-app/upload_mode.flag` during
+  upload so that `pc-app/monitor_dashboard.py` temporarily releases the serial port.
+- Ready-made upload scripts are also available for the master: `flash_com4.bat` and `flash_com6.bat`.
+  Check the port numbers inside them.
 
-### Windows kurulum paketi
+### Windows installer
 
 ```powershell
 cd pc-app
 powershell -ExecutionPolicy Bypass -File build_exe.ps1
 ```
 
-- PyInstaller ([`GloveTestSystem.spec`](pc-app/GloveTestSystem.spec)) ile `dist/GloveTestSystem/` oluşturulur
-  ve ZIP paketi hazırlanır. Inno Setup 5/6 kuruluysa [`installer.iss`](pc-app/installer.iss) ile
-  `installer_output/` altında kurulum dosyası da üretilir.
-- Kurulum paketi Microsoft Visual C++ yeniden dağıtılabilir paketini içerir. `vc_redist.x64.exe` dosyasını
-  [Microsoft'tan](https://aka.ms/vs/17/release/vc_redist.x64.exe) indirip `pc-app/redist/` klasörüne koyun.
-- Derlenmiş kurulum dosyalarını depoya eklemek yerine **GitHub Releases** üzerinden paylaşın.
+- PyInstaller ([`GloveTestSystem.spec`](pc-app/GloveTestSystem.spec)) builds `dist/GloveTestSystem/`, and a ZIP
+  package is created. If Inno Setup 5/6 is installed, [`installer.iss`](pc-app/installer.iss) also produces a
+  setup file under `installer_output/`.
+- The installer bundles the Microsoft Visual C++ Redistributable. Download `vc_redist.x64.exe`
+  [from Microsoft](https://aka.ms/vs/17/release/vc_redist.x64.exe) and place it in `pc-app/redist/`.
+- Share built installers through **GitHub Releases** instead of committing them to the repository.
 
-## Depoya dahil edilmeyenler
+## Not included in the repository
 
-[`.gitignore`](.gitignore) aşağıdakileri hariç tutar. Bunlar yerelde oluşur veya ayrıca paylaşılır:
+[`.gitignore`](.gitignore) excludes the following. These files are generated locally or shared separately:
 
-- Veritabanları (`*.db`), loglar, PDF raporlar, batch verileri ve arayüzden yüklenen görseller
-- Müşteriye özel 3D modeller (`*.glb`, `*.gltf`) ve Office dokümanları (`*.docx`, `*.xlsx`). Alarm kodu ve
-  interlock matrisi Excel dosyaları `pc-app/_gen_alarm_codes_xlsx.py` ve `pc-app/_gen_interlock_matrix_xlsx.py`
-  ile yeniden üretilebilir.
-- PyInstaller ve Inno Setup çıktıları (`build/`, `dist/`, `installer_output/`, ZIP) ile `redist/`
-- PlatformIO çıktıları (`.pio/`), `*.bin`, `*.elf`, `*.exe`, `*.zip`, `*.rar`
+- Databases (`*.db`), logs, PDF reports, batch data and images uploaded through the UI
+- Customer-specific 3D models (`*.glb`, `*.gltf`) and Office documents (`*.docx`, `*.xlsx`). The alarm code and
+  interlock matrix Excel files can be regenerated with `pc-app/_gen_alarm_codes_xlsx.py` and
+  `pc-app/_gen_interlock_matrix_xlsx.py`.
+- PyInstaller and Inno Setup output (`build/`, `dist/`, `installer_output/`, ZIP) and `redist/`
+- PlatformIO output (`.pio/`), `*.bin`, `*.elf`, `*.exe`, `*.zip`, `*.rar`
 - `firmware/glt-v3/include/secrets.h`
 
-## Diğer klasörler
+## Other folders
 
-- [`tools/`](tools/): Geliştirme sırasında kullanılan teşhis betikleri (seri port izleme, veritabanı
-  karşılaştırma/migrasyon, uçtan uca test, NotebookLM dışa aktarımı). Çoğunda COM port numaraları ve
-  veritabanı yolları sabit yazılıdır; çalıştırmadan önce düzenleyin.
-- [`docs/`](docs/): Ek teknik notlar.
-- Otomatik test paketi yoktur. `pc-app/test_*.py` ve `pc-app/_verify_*.py` dosyaları tek tek çalıştırılan
-  doğrulama/teşhis betikleridir; bazıları bağlı donanım gerektirir.
+- [`tools/`](tools/): Diagnostic scripts used during development (serial port monitoring, database
+  comparison/migration, end-to-end testing, NotebookLM export). Most of them contain hard-coded COM port numbers
+  and database paths; edit them before running.
+- [`docs/`](docs/): Additional technical notes (Turkish).
+- There is no automated test suite. `pc-app/test_*.py` and `pc-app/_verify_*.py` are standalone
+  verification/diagnostic scripts; some of them require connected hardware.
