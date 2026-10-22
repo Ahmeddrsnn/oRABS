@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>Oraps 3D Viewer</title>
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #1f2937; }
+  #views {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 4px;
+    width: 100%; height: 100%;
+  }
+  .view { position: relative; min-width: 0; min-height: 0; }
+  .view canvas { width: 100%; height: 100%; display: block; }
+  .view .label {
+    position: absolute; top: 6px; left: 8px; padding: 3px 8px;
+    background: rgba(0,0,0,0.55); color: #fff;
+    font: 11px 'Segoe UI', sans-serif; letter-spacing: 1px;
+    border-radius: 3px; pointer-events: none;
+  }
+  #status {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    padding: 4px 10px;
+    background: rgba(0,0,0,0.55); color: #fff; font: 11px 'Segoe UI', sans-serif;
+    border-radius: 4px; pointer-events: none; z-index: 10;
+  }
+  #status.error { background: rgba(180,0,0,0.85); }
+  #status.ok    { background: rgba(0,120,0,0.7); }
+  #legend {
+    position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+    padding: 5px 10px;
+    background: rgba(255,255,255,0.92); color: #1f2937;
+    font: 11px 'Segoe UI', sans-serif; border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    display: flex; gap: 12px; z-index: 10;
+  }
+  #legend .item { display:flex; align-items:center; }
+  #legend .sw { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; }
+
+  /* LAF overlay (Faz-5): GLB üzerinde sensör değer chip'leri — three.js
+     sahnesinin DIŞINDA DOM katmanı; render loop'u etkilemez → GLB titremesi yok. */
+  #lafOverlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none;  /* viewer ile mouse çakışmasın — edit modunda chip'lere açılır */
+    z-index: 8;
+    overflow: visible;
+  }
+  #lafOverlay .laf-chip {
+    position: absolute;
+    background: rgba(255,255,255,0.92);
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font: 11px 'Segoe UI', sans-serif;
+    color: #1f2937;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+    min-width: 80px;
+    transform: translate(-50%, -50%);  /* x/y center'ı işaretler */
+    user-select: none;
+  }
+  #lafOverlay .laf-chip .laf-label {
+    color: #6b7280; font-size: 10px; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.3px;
+  }
+  #lafOverlay .laf-chip .laf-value {
+    color: #111827; font-size: 14px; font-weight: 700; margin-top: 1px;
+  }
+  #lafOverlay .laf-chip .laf-unit {
+    color: #6b7280; font-size: 10px; font-weight: 500; margin-left: 3px;
+  }
+</style>
+</head>
+<body>
+<div id="views">
+  <div class="view" id="viewFront"><span class="label" id="labelFront">ÖN</span><canvas id="viewerFront"></canvas></div>
+  <div class="view" id="viewBack"><span class="label" id="labelBack">ARKA</span><canvas id="viewerBack"></canvas></div>
+  <div class="view" id="viewLeft"><span class="label" id="labelLeft">SOL</span><canvas id="viewerLeft"></canvas></div>
+  <div class="view" id="viewRight"><span class="label" id="labelRight">SAĞ</span><canvas id="viewerRight"></canvas></div>
+</div>
+<div id="status">Yükleniyor…</div>
+<div id="legend" style="display:none;">
+  <div class="item"><span class="sw" style="background:#10b981"></span>Kapak Kilitli Değil</div>
+  <div class="item"><span class="sw" style="background:#ef4444"></span>Kapak Kilitli</div>
+  <div class="item"><span class="sw" style="background:#facc15"></span>Kapak Açık</div>
+  <div class="item"><span class="sw" style="background:#f97316"></span>Işık Bariyeri Aktif</div>
+  <div class="item"><span class="sw" style="background:#3b82f6"></span>Port Hareketi</div>
+  <div class="item"><span class="sw" style="background:#9333ea"></span>Batch Üyesi Port</div>
+  <div class="item"><span class="sw" style="background:#06b6d4"></span>Test Geçti</div>
+  <div class="item"><span class="sw" style="background:#ec4899"></span>Test Başarısız</div>
+  <div class="item"><span class="sw" style="background:#cbd5e1"></span>Varsayılan</div>
+</div>
+<div id="lafOverlay"></div>
+
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script src="three.min.js"></script>
+<script src="GLTFLoader.js"></script>
+<script src="viewer.js?v=laf-25"></script>
+</body>
+</html>

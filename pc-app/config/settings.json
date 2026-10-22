@@ -1,0 +1,38 @@
+{
+    "serial": {
+        "baud_rate": 921600,
+        "timeout": 1,
+        "auto_reconnect": true,
+        "reconnect_delay": 5
+    },
+    "database": {
+        "path": "database/glove_test.db"
+    },
+    "audit": {
+        "enabled": true,
+        "log_level": "INFO",
+        "retention_days": 365
+    },
+    "password_policy": {
+        "min_length": 8,
+        "require_uppercase": true,
+        "require_lowercase": true,
+        "require_digit": true,
+        "require_special": true,
+        "max_failed_attempts": 3,
+        "lockout_duration_minutes": 15
+    },
+    "application": {
+        "name": "Glove Test Control System",
+        "version": "1.0.0",
+        "company": "Your Company Name"
+    },
+    "test_parameters": {
+        "pressure_min": 0.0,
+        "pressure_max": 100.0,
+        "temperature_min": 0.0,
+        "temperature_max": 50.0,
+        "duration_min": 1,
+        "duration_max": 3600
+    }
+}

@@ -1,0 +1,9 @@
+PyQt5>=5.15.9
+PyQtWebEngine>=5.15.6
+pyserial>=3.5
+bcrypt>=4.0.1
+reportlab>=4.0.4
+matplotlib>=3.7.1
+cryptography>=41.0.3
+Pillow>=10.0.0
+pymodbus>=3.5.0

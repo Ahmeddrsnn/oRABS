@@ -1,0 +1,104 @@
+# ==========================================================================
+#  GloveTestSystem - Git'e gönderilmeyecek dosyalar
+# ==========================================================================
+
+# --- Gizli bilgiler -------------------------------------------------------
+# Wi-Fi/OTA bilgileri (şablon: firmware/glt-v3/include/secrets.example.h)
+firmware/glt-v3/include/secrets.h
+.env
+.env.*
+
+# --- Çalışma zamanı verileri: veritabanı, log, rapor, batch ----------------
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.log
+*.log.[0-9]*
+crash_log.txt
+build_err.txt
+build_errors.txt
+build_log.txt
+installer_build_log.txt
+installer_log.txt
+*.flag
+
+/pc-app/database/
+/pc-app/reports/
+/pc-app/batches/
+/pc-app/src/database/
+/pc-app/src/reports/
+/pc-app/src/batches/
+/pc-app/src/.db_backup/
+/pc-app/src/storage_config.json
+/pc-app/src/assets/report_logo.*
+# Geliştirme modunda arayüzden yüklenen yerleşim planı/arka plan görselleri
+/pc-app/assets/
+
+# --- Paylaşılmayan 3D modeller ve Office dokümanları ---------------------------
+# GLB/GLTF modeli Ayarlar > ORAPS ekranından dosya olarak seçilir
+/pc-app/src/assets/models/
+*.glb
+*.gltf
+*.docx
+*.doc
+*.xlsx
+*.xls
+
+# --- PC uygulaması build / installer çıktıları ------------------------------
+/pc-app/build/
+/pc-app/dist/
+/pc-app/GloveTestSystem_Setup/
+/pc-app/GloveTestSystem_Distribution/
+/pc-app/installer_output/
+# vc_redist.x64.exe Microsoft'tan indirilip buraya konur (bkz. installer.iss)
+/pc-app/redist/
+
+# --- Firmware build çıktıları (PlatformIO) ------------------------------------
+.pio/
+.pioenvs/
+.piolibdeps/
+/firmware/glt-v3/build/
+/firmware/glt-v3/release/
+firmware/*/.vscode/.browse.c_cpp.db*
+firmware/*/.vscode/c_cpp_properties.json
+firmware/*/.vscode/launch.json
+firmware/*/.vscode/ipch/
+
+# --- İkili dosyalar ve arşivler (dağıtım için GitHub Releases kullanın) -------
+*.exe
+*.msi
+*.bin
+*.elf
+*.map
+*.zip
+*.rar
+*.7z
+
+# --- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# --- Yedek / geçici dosyalar ---------------------------------------------------
+*.bak
+*.backup
+*.orig
+*.tmp
+~$*
+
+# --- Yerel araç çıktıları -----------------------------------------------------
+.codex_work/
+/NotebookLM_Export/
+
+# --- İşletim sistemi / editör ---------------------------------------------------
+Thumbs.db
+desktop.ini
+.DS_Store
+.idea/
+/.vscode/

@@ -1,0 +1,63 @@
+# GLT_v3 Project AI Rules (Master Prompt)
+
+Bu dosya, bu projede çalışan tüm AI ajanları (Antigravity vb.) için zorunlu kuralları içerir.
+
+## 1. Dil ve İletişim
+- Kullanıcı ile iletişim dili her zaman **Türkçe** olmalıdır.
+- Kod içerisindeki yorum satırları (comments) **Türkçe** yazılmalıdır.
+- Teknik terimler yaygın kullanıldığı şekilde bırakılabilir ancak açıklamalar Türkçe olmalıdır.
+
+## 2. Teknik Altyapı
+- **Platform:** ESP32-S3 (S3-WROOM-1).
+- **Framework:** Arduino / PlatformIO.
+- **Python-CLI:** PlatformIO komutları `python -m platformio` şeklinde çalıştırılmalıdır.
+- **Varsayılan Port:** Yükleme ve monitör işlemleri için varsayılan port **COM23**'tür.
+- **Serial Monitor:** Standart PlatformIO monitörü yerine projedeki `serial_debug.py` betiği kullanılmalıdır (`python serial_debug.py`).
+
+## 3. Kod Yazım Kuralları
+- **Immutable Bloklar:** Başında veya sonunda `/*dogrulandı*/` yorumu bulunan kod blokları veya satırları asla değiştirilmemeli, silinmemelidir. Bu kısımlar kullanıcı tarafından doğrulanmış kesin kodlardır.
+- **Logger:** Doğrudan `Serial.print` kullanılmamalı, projenin kendi `Logger` servisi kullanılmalıdır.
+- **Config:** Sabitler ve yapılandırmalar `Config.h` ve `Config.cpp` üzerinden yönetilmelidir.
+- **Bellek:** ESP32-S3 belleği (PSRAM vb.) verimli kullanılmalı, statik tahsisler tercih edilmelidir.
+
+## 4. Geliştirme ve Yükleme İşlemleri
+- **Dikkatli Düzenleme:** Kod üzerinde değişiklik yaparken son derece dikkatli olunmalı; mevcut lojik bozulmadan, sadece odaklanılan kısım güncellenmelidir.
+- **Python Yeniden Başlatma:** PC tarafındaki Python projelerinde (`pc-app`) bir değişiklik yapıldığında, çalışan bir instance varsa önce kapatılmalı, değişiklik uygulandıktan sonra uygulama yeniden çalıştırılmalıdır.
+- **Güvenli Yükleme:** Yazılım yüklemeden önce PC tarafındaki Dashboard uygulamasının UART'ı bırakması için `safe_upload.bat` içeriğindeki mantık (flag dosyası oluşturma) takip edilmelidir.
+- **Derleme:** Değişiklik sonrası her zaman `pio run` ile derleme kontrol edilmelidir.
+
+## 5. Davranış Modu ve Planlama
+- **Planlama:** Herhangi bir kod değişikliği yapmadan önce mutlaka ne yapılacağı, hangi dosyaların etkileneceği kullanıcıya **Türkçe** olarak açıklanmalıdır. Kullanıcı onay vermeden koda dokunulmamalıdır.
+- **Implementasyon Planları:** Oluşturulan `implementation_plan.md` dosyaları tamamen **Türkçe** olmalıdır.
+- **Onay Mekanizması:** İmplementasyon planı kullanıcı tarafından doğrudan "onay" almadığı sürece (hiçbir yorum veya soru kalmayana kadar) işleme başlanmamalıdır. Eğer kullanıcı planda tek bir noktaya bile yorum yaparsa, plan revize edilmeli ve tekrar onay istenmelidir.
+- **Proaktiflik ve Dikkat:** Her zaman proaktif ol, ancak "pat diye" kod yazmaya başlama. Önce stratejini açıkla, onayı al, sonra cerrahi hassasiyetle uygula.
+- **Hata Analizi:** Hata durumunda logları incele ve çözüm önerisi ile gel.
+
+## 6. İşlem Durum Bildirimi (Müzik) - ZORUNLU
+- **KURAL:** Herhangi bir terminal komutu (build, upload, test, run vb.) çalıştırırken müzik bildirimi yap.
+
+- **İşlem Akışı:**
+  1. Komut çalıştırmadan ÖNCE → `python play_success_music.py start`
+  2. Asıl komutu çalıştır (örn: `pio run -t upload`)
+  3. Komut başarıyla tamamlandıktan SONRA → `python play_success_music.py finish`
+
+- **Örnek Kullanım:**
+  ```bash
+  python play_success_music.py start
+  python -m platformio run -t upload --upload-port COM23
+  python play_success_music.py finish
+  ```
+
+
+
+- **Uygulanacak Komutlar:**
+  - `pio run`, `pio run -t upload`
+  - `python -m platformio ...`
+  - `python serial_debug.py`
+  - Test scriptleri, uzun süren işlemler
+  - Kullanıcının manuel olarak çalıştırdığı her kritik komut
+
+- **Müzik Dosyası:** `C:\Program Files\WindowsApps\AntaraSoftware.AlarmClockHD_7.0.0.0_x64__7jhd16s0b93qm\Assets\AlarmMusic\Guitar.mp3`
+- **Müzik Davranışı:**
+  - `start`: Smooth11.mp3'yi 1 kere çalar, hemen devam eder (işlem başladı bildirimi)
+  - `finish`: Piano.mp3'yi döngüde çalar, Ctrl+C ile durdurulur (işlem bitti kutlaması)
